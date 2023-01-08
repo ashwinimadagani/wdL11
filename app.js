@@ -2,7 +2,7 @@ const express = require("express");
 const app = express();
 const csrf = require("tiny-csrf");
 const cookieParser = require("cookie-parser");
-const { admin, Election, questions, Options } = require("./models");
+const { admin, Election, questions, Options, Voters } = require("./models");
 const bodyParser = require("body-parser");
 const connectEnsureLogin = require("connect-ensure-login");
 const LocalStratergy = require("passport-local");
@@ -512,18 +512,65 @@ app.get(
   async (req, res) => {
     try {
       const election = await Election.retriveElection(req.params.electionId);
+      const voters = await Voters.retriveVoters(req.params.electionId);
       if (req.accepts("html")) {
         return res.render("voters-manage", {
           title: election.electionName,
-          id: req.params.id,
+          id: req.params.electionId,
           csrfToken: req.csrfToken(),
+          voters,
         });
       } else {
-        return res.json({});
+        return res.json({ voters });
       }
     } catch (err) {
       console.log(err);
       return res.status(422).json(err);
+    }
+  }
+);
+
+app.get(
+  "/electionpage/:electionId/voters/votercreate",
+  connectEnsureLogin.ensureLoggedIn(),
+  async (req, res) => {
+    try {
+      res.render("create-voter", {
+        title: "Add voter",
+        electionId: req.params.electionId,
+        csrfToken: req.csrfToken(),
+      });
+    } catch (err) {
+      console.log(err);
+      return res.status(422).json(err);
+    }
+  }
+);
+
+app.post(
+  "/electionpage/:electionId/voters/votercreate",
+  connectEnsureLogin.ensureLoggedIn(),
+  async (req, res) => {
+    if (req.body.password.length < 8) {
+      req.flash("error", "Password should contain atleast 8");
+      return res.redirect(
+        `/electionpage/${req.params.electionId}/voters/votercreate`
+      );
+    }
+    const hashedPwd = await bcrypt.hash(req.body.password, saltRounds);
+    try {
+      await Voters.addVoter({
+        voterid: req.body.voterid,
+        password: hashedPwd,
+        electionID: req.params.electionID,
+      });
+      return res.redirect(`/electionpage/${req.params.electionId}/voters`);
+    } catch (err) {
+      console.log(err);
+      req.flash("error", "Voter ID already in use, try another!");
+      return res.redirect(
+        `/electionpage/${req.params.electionId}/voters/votercreate`
+      );
     }
   }
 );
